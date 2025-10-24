@@ -1,3 +1,5 @@
+#Diccionario con los datos geográficos de los aeropuertos
+
 AEROPUERTOS = {
     "SKRG": {
         "nombre": "José María Córdova (Rionegro)",

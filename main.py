@@ -1,7 +1,23 @@
-from core.calculos import distancia_entre_aeropuertos
 from data.aeropuertos import AEROPUERTOS
+from core.calculos import calcular_distancia_y_rumbo
+import tkinter as tk
+from ui.interfaz import InterfazPlanificador
 
 if __name__ == "__main__":
-    origen, destino = "SKMD", "SKRG"
-    distancia = distancia_entre_aeropuertos(origen, destino)
-    print(f"Distancia entre {AEROPUERTOS[origen]['nombre']} y {AEROPUERTOS[destino]['nombre']}: {distancia:.2f} km")
+    # MODO DE PRUEBA (activa o comenta según necesites)
+    modo_prueba = False  # cambia a True para ejecutar solo el cálculo por consola
+
+    if modo_prueba:
+        origen = AEROPUERTOS["SKRG"]
+        destino = AEROPUERTOS["SKMD"]
+
+        distancia, rumbo = calcular_distancia_y_rumbo(origen, destino)
+
+        print(f"Distancia entre {origen['nombre']} y {destino['nombre']}: {distancia:.2f} km")
+        print(f"Rumbo inicial: {rumbo:.1f}°")
+
+    else:
+        # Iniciar interfaz gráfica
+        root = tk.Tk()
+        app = InterfazPlanificador(root)
+        root.mainloop()
