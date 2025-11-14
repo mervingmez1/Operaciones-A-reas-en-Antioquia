@@ -2,6 +2,7 @@ from data.aeropuertos import AEROPUERTOS
 from core.calculos import calcular_distancia_y_rumbo
 import tkinter as tk
 from ui.interfaz import InterfazPlanificador
+#Ejecuta "pip install -r requirements.txt"
 
 if __name__ == "__main__":
     # MODO DE PRUEBA (activa o comenta según necesites)

@@ -1,0 +1,3 @@
+geopy
+python-dotenv
+requests

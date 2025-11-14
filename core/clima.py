@@ -1,76 +1,100 @@
-import random
 import os
+import random
 import requests
 from dotenv import load_dotenv
 
-# --- Configuración global ---
+# Cargar API Key desde .env
 load_dotenv()
 API_KEY = os.getenv("OPENWEATHER_API_KEY")
-USE_REAL_DATA = False  # Cambia a True cuando quieras usar datos reales (requiere API)
 
-# --- Fuente de datos ---
-fuente_datos = (
-    "Datos meteorológicos obtenidos desde API externa (OpenWeather)"
-    if USE_REAL_DATA
-    else "Datos meteorológicos simulados (sin conexión a API real)"
-)
+# ===========================
+#   DATOS REALES DESDE API
+# ===========================
+def obtener_condiciones_meteorologicas(lat, lon):
+    """
+    Obtiene las condiciones meteorológicas desde OpenWeather API.
+    Retorna un diccionario con temperatura, viento, visibilidad y nubosidad.
+    """
+    if API_KEY is None:
+        print("⚠️ ADVERTENCIA: No se encontró API_KEY, usando datos simulados.")
+        return obtener_condiciones_simuladas()
+
+    url = (
+        "https://api.openweathermap.org/data/2.5/weather"
+        f"?lat={lat}&lon={lon}&appid={API_KEY}&units=metric&lang=es"
+    )
+
+    try:
+        r = requests.get(url, timeout=5)
+        data = r.json()
+
+        # Conversión de unidades
+        temperatura = data["main"]["temp"]
+        viento = data["wind"]["speed"] * 3.6          # m/s → km/h
+        vis_km = (data.get("visibility", 10000)) / 1000.0
+        nubes = data["weather"][0]["description"].capitalize()
+
+        return {
+            "temperatura": temperatura,
+            "viento": round(viento, 1),
+            "visibilidad": round(vis_km, 1),
+            "nubosidad": nubes
+        }
+
+    except Exception as e:
+        print("❌ Error al obtener datos reales:", e)
+        print("Usando condiciones simuladas.")
+        return obtener_condiciones_simuladas()
 
 
-# ============================================================
-# FUNCIONES DE OBTENCIÓN DE CONDICIONES
-# ============================================================
-
+# =================================
+#     DATOS SIMULADOS (OFFLINE)
+# =================================
 def obtener_condiciones_simuladas():
-    """Genera condiciones meteorológicas aleatorias (modo offline)."""
+    """Genera datos meteorológicos aleatorios."""
     condiciones = {
         "temperatura": round(random.uniform(15, 35), 1),
-        "viento": round(random.uniform(0, 25), 1),
-        "visibilidad": round(random.uniform(1000, 10000), 0),  # en metros
+        "viento": round(random.uniform(0, 25), 1),  # km/h
+        "visibilidad": round(random.uniform(1, 20), 1),  # km
         "nubosidad": random.choice(["Despejado", "Parcial", "Nublado", "Tormentoso"]),
     }
     return condiciones
 
 
-def obtener_condiciones_reales(lat, lon):
-    """Obtiene datos reales desde la API de OpenWeatherMap."""
-    url = (
-        f"https://api.openweathermap.org/data/2.5/weather"
-        f"?lat={lat}&lon={lon}&appid={API_KEY}&units=metric&lang=es"
+# =======================================
+#     CLASIFICACIÓN DE REGLAS DE VUELO
+# =======================================
+def determinar_reglas_vuelo(condiciones):
+    """
+    Determina si las condiciones son VFR, MVFR, IFR o LIFR.
+    """
+
+    vis_km = condiciones["visibilidad"]
+    nubes = condiciones["nubosidad"].lower()
+
+    # ---- LIFR ----
+    if vis_km < 1:
+        return "LIFR", "Condiciones extremadamente limitadas. Vuelo VFR prohibido."
+
+    # ---- IFR ----
+    if vis_km < 5:
+        return "IFR", "Condiciones malas. Solo vuelo por instrumentos."
+
+    # ---- MVFR ----
+    if vis_km < 10 or "nublado" in nubes or "torment" in nubes:
+        return "MVFR", "Condiciones marginales. Precaución: visibilidad o nubosidad reducida."
+
+    # ---- VFR ----
+    return "VFR", "Condiciones buenas para vuelo visual."
+
+
+# ===============================
+#  INDICADOR DE FUENTE DE DATOS
+# ===============================
+def fuente_datos():
+    """Solo devuelve un texto indicando si se usa API o simulación."""
+    return (
+        "Datos meteorológicos obtenidos desde API externa (OpenWeather)"
+        if API_KEY
+        else "Datos meteorológicos simulados (modo offline)"
     )
-    respuesta = requests.get(url)
-    datos = respuesta.json()
-
-    condiciones = {
-        "temperatura": datos["main"]["temp"],
-        "viento": round(datos["wind"]["speed"] * 3.6, 1),  # m/s → km/h
-        "visibilidad": datos.get("visibility", 0),  # en metros
-        "nubosidad": datos["weather"][0]["description"].capitalize(),
-    }
-    return condiciones
-
-
-def obtener_condiciones_meteorologicas(aeropuerto):
-    """Devuelve las condiciones (reales o simuladas según configuración)."""
-    if USE_REAL_DATA:
-        return obtener_condiciones_reales(aeropuerto["lat"], aeropuerto["lon"])
-    else:
-        return obtener_condiciones_simuladas()
-
-
-# ============================================================
-# FUNCIÓN DE EVALUACIÓN DE SEGURIDAD
-# ============================================================
-
-def es_condicion_segura(condiciones):
-    """
-    Evalúa si las condiciones son aptas para vuelo visual (VFR).
-    Criterios básicos:
-      - Viento <= 25 km/h
-      - Visibilidad >= 5000 m
-      - Nubosidad: Despejado o Parcial
-    """
-    viento_ok = condiciones["viento"] <= 25
-    vis_ok = condiciones["visibilidad"] >= 5000
-    cielo_ok = any(p in condiciones["nubosidad"].lower() for p in ["despejado", "parcial"])
-
-    return viento_ok and vis_ok and cielo_ok

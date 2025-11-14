@@ -2,7 +2,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from data.aeropuertos import AEROPUERTOS
 from core.calculos import calcular_distancia_y_rumbo
-from core.clima import obtener_condiciones_meteorologicas, es_condicion_segura, fuente_datos
+from core.clima import (
+    obtener_condiciones_meteorologicas,
+    es_condicion_segura,
+    determinar_reglas_vuelo,
+    fuente_datos
+)
+
 
 
 class InterfazPlanificador:
@@ -59,25 +65,53 @@ class InterfazPlanificador:
         origen = AEROPUERTOS[origen_codigo]
         destino = AEROPUERTOS[destino_codigo]
 
+        # ---------------------------------------
+        # CÁLCULO DE DISTANCIA Y RUMBO
+        # ---------------------------------------
         distancia, rumbo = calcular_distancia_y_rumbo(origen, destino)
-        condiciones = obtener_condiciones_meteorologicas(origen)
+
+        # ---------------------------------------
+        # OBTENER METEOROLOGÍA (REAL O SIMULADA)
+        # ---------------------------------------
+        condiciones = obtener_condiciones_meteorologicas(origen["lat"], origen["lon"])
+
+        # Estado VFR / IFR básico
         segura = es_condicion_segura(condiciones)
         estado_seguridad = "🟢 SEGURA (VFR)" if segura else "🔴 NO SEGURA (IFR recomendado)"
 
+        # Reglas VFR / MVFR / IFR / LIFR
+        reglas, descripcion_reglas = determinar_reglas_vuelo(condiciones)
+
+        # ---------------------------------------
+        # FORMATO DE RESULTADO
+        # ---------------------------------------
         resultado = (
             f"✈️ Ruta: {origen['nombre']} → {destino['nombre']}\n"
             f"📍 Distancia: {distancia:.2f} km\n"
             f"🧭 Rumbo inicial: {rumbo:.1f}°\n\n"
+            
             f"🌦️ Condiciones meteorológicas:\n"
-            f"Temperatura: {condiciones['temperatura']} °C\n"
-            f"Viento: {condiciones['viento']} km/h\n"
-            f"Visibilidad: {condiciones['visibilidad']} m\n"
-            f"Nubosidad: {condiciones['nubosidad']}\n\n"
-            f"🛫 Condición de vuelo: {estado_seguridad}\n\n"
-            f"📘 Fuente: {fuente_datos}"
+            f"   • Temperatura: {condiciones['temperatura']} °C\n"
+            f"   • Viento: {condiciones['viento']} km/h\n"
+            f"   • Visibilidad: {condiciones['visibilidad']} km\n"
+            f"   • Nubosidad: {condiciones['nubosidad']}\n\n"
+
+            f"🛫 Estado VFR/IFR: {estado_seguridad}\n"
+            f"📏 Clasificación: {reglas}\n"
+            f"{descripcion_reglas}\n\n"
+
+            f"📘 Fuente de datos: {fuente_datos()}"
         )
 
+        # Mostrar en el cuadro de texto
         self.mostrar_resultado(resultado)
+
+        # Ventanas emergentes
+        if segura:
+            messagebox.showinfo("Condición de vuelo", "🟢 Condiciones SEGURAS para vuelo visual (VFR).")
+        else:
+            messagebox.showwarning("Condición de vuelo", "🔴 Condiciones NO SEGURAS. Se recomienda vuelo IFR.")
+
 
 
 if __name__ == "__main__":
