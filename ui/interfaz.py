@@ -8,14 +8,14 @@ from core.clima import (
     determinar_reglas_vuelo,
     fuente_datos
 )
-
+from core.mapas import generar_mapa_ruta
 
 
 class InterfazPlanificador:
     def __init__(self, master):
         self.master = master
         self.master.title("Planificador de Rutas Aéreas - Antioquia")
-        self.master.geometry("800x600")
+        self.master.geometry("900x650")
 
         ttk.Label(master, text="Planificador de Rutas Aéreas", font=("Helvetica", 18, "bold")).pack(pady=20)
 
@@ -39,20 +39,60 @@ class InterfazPlanificador:
         if len(nombres_aeropuertos) > 1:
             self.destino.current(1)
 
-        # --- Botón ---
-        ttk.Button(master, text="Planificar Ruta", command=self.planificar_ruta).pack(pady=20)
+        # --- Botones ---
+        frame_botones = ttk.Frame(master)
+        frame_botones.pack(pady=10)
+        ttk.Button(frame_botones, text="Planificar Ruta", command=self.planificar_ruta).grid(row=0, column=0, padx=6)
+        ttk.Button(frame_botones, text="Mostrar Mapa", command=self.mostrar_mapa).grid(row=0, column=1, padx=6)
 
         # --- Resultado ---
-        self.resultado = tk.Text(master, height=14, width=90)
+        self.resultado = tk.Text(master, height=14, width=100)
         self.resultado.pack(pady=10)
 
+        # --- Indicador visual ---
+        self.indicador_estado = tk.Label(
+            master,
+            text="",
+            font=("Helvetica", 16, "bold"),
+            width=40,
+            pady=12
+        )
+        self.indicador_estado.pack(pady=10)
+
+    # ==============================================
+    #   Función para mostrar resultados
+    # ==============================================
     def mostrar_resultado(self, texto):
-        """Limpia y muestra resultados en el área de texto."""
         self.resultado.delete("1.0", tk.END)
         self.resultado.insert(tk.END, texto)
 
+    # ==============================================
+    #   Indicador visual VFR / MVFR / IFR / LIFR
+    # ==============================================
+    def actualizar_indicador(self, reglas):
+        colores = {
+            "VFR": "#4CAF50",
+            "MVFR": "#FFCA28",
+            "IFR": "#FF7043",
+            "LIFR": "#D32F2F"
+        }
+
+        textos = {
+            "VFR": "🟢 Condiciones VFR (Buenas)",
+            "MVFR": "🟡 Condiciones MVFR (Marginal)",
+            "IFR": "🟠 Condiciones IFR (Instrumentales)",
+            "LIFR": "🔴 Condiciones LIFR (Muy pobres)"
+        }
+
+        color = colores.get(reglas, "#888888")
+        texto = textos.get(reglas, "Estado desconocido")
+
+        self.indicador_estado.config(text=texto, bg=color, fg="white")
+
+    # ==============================================
+    #         Lógica principal
+    # ==============================================
     def planificar_ruta(self):
-        """Calcula la ruta y muestra la información."""
         origen_nombre = self.origen.get()
         destino_nombre = self.destino.get()
 
@@ -65,31 +105,28 @@ class InterfazPlanificador:
         origen = AEROPUERTOS[origen_codigo]
         destino = AEROPUERTOS[destino_codigo]
 
-        # ---------------------------------------
-        # CÁLCULO DE DISTANCIA Y RUMBO
-        # ---------------------------------------
+        # Cálculo de distancia y rumbo
         distancia, rumbo = calcular_distancia_y_rumbo(origen, destino)
 
-        # ---------------------------------------
-        # OBTENER METEOROLOGÍA (REAL O SIMULADA)
-        # ---------------------------------------
+        # Meteorología (API o simulada)
         condiciones = obtener_condiciones_meteorologicas(origen["lat"], origen["lon"])
 
         # Estado VFR / IFR básico
         segura = es_condicion_segura(condiciones)
         estado_seguridad = "🟢 SEGURA (VFR)" if segura else "🔴 NO SEGURA (IFR recomendado)"
 
-        # Reglas VFR / MVFR / IFR / LIFR
+        # Reglas de vuelo
         reglas, descripcion_reglas = determinar_reglas_vuelo(condiciones)
 
-        # ---------------------------------------
-        # FORMATO DE RESULTADO
-        # ---------------------------------------
+        # Actualizar indicador visual
+        self.actualizar_indicador(reglas)
+
+        # Mostrar resultado
         resultado = (
             f"✈️ Ruta: {origen['nombre']} → {destino['nombre']}\n"
             f"📍 Distancia: {distancia:.2f} km\n"
             f"🧭 Rumbo inicial: {rumbo:.1f}°\n\n"
-            
+
             f"🌦️ Condiciones meteorológicas:\n"
             f"   • Temperatura: {condiciones['temperatura']} °C\n"
             f"   • Viento: {condiciones['viento']} km/h\n"
@@ -103,17 +140,47 @@ class InterfazPlanificador:
             f"📘 Fuente de datos: {fuente_datos()}"
         )
 
-        # Mostrar en el cuadro de texto
         self.mostrar_resultado(resultado)
 
-        # Ventanas emergentes
         if segura:
             messagebox.showinfo("Condición de vuelo", "🟢 Condiciones SEGURAS para vuelo visual (VFR).")
         else:
             messagebox.showwarning("Condición de vuelo", "🔴 Condiciones NO SEGURAS. Se recomienda vuelo IFR.")
 
+    # ==============================================
+    #      NUEVO MÉTODO: MOSTRAR MAPA
+    # ==============================================
+    def mostrar_mapa(self):
+        origen_nombre = self.origen.get()
+        destino_nombre = self.destino.get()
+
+        if not origen_nombre or not destino_nombre:
+            messagebox.showwarning("Mapa", "Selecciona origen y destino primero.")
+            return
+
+        origen_codigo = self.nombres_a_codigos[origen_nombre]
+        destino_codigo = self.nombres_a_codigos[destino_nombre]
+        origen = AEROPUERTOS[origen_codigo]
+        destino = AEROPUERTOS[destino_codigo]
+
+        distancia, rumbo = calcular_distancia_y_rumbo(origen, destino)
+
+        try:
+            archivo = generar_mapa_ruta(
+                origen,
+                destino,
+                distancia_km=distancia,
+                rumbo_deg=rumbo,
+                abrir_en_navegador=True
+            )
+            messagebox.showinfo("Mapa", f"Mapa generado: {archivo}\nSe abrió en tu navegador.")
+        except Exception as e:
+            messagebox.showerror("Error mapa", f"No se pudo generar el mapa:\n{e}")
 
 
+# ==============================================
+#           EJECUCIÓN PRINCIPAL
+# ==============================================
 if __name__ == "__main__":
     root = tk.Tk()
     app = InterfazPlanificador(root)
