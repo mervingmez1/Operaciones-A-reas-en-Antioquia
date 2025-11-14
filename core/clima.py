@@ -98,3 +98,33 @@ def fuente_datos():
         if API_KEY
         else "Datos meteorológicos simulados (modo offline)"
     )
+
+# =======================================
+#   EVALUACIÓN DE SEGURIDAD DEL VUELO
+# =======================================
+
+def es_condicion_segura(condiciones):
+    """
+    Determina si las condiciones son seguras para vuelo VFR.
+    Retorna True/False.
+    """
+    categoria, _ = determinar_reglas_vuelo(condiciones)
+    return categoria == "VFR" or categoria == "MVFR"
+
+
+def analizar_condiciones_meteorologicas(condiciones):
+    """
+    Retorna un texto detallado usado por la interfaz.
+    """
+    categoria, mensaje = determinar_reglas_vuelo(condiciones)
+
+    texto = (
+        f"Clasificación meteorológica: {categoria}\n"
+        f"{mensaje}\n\n"
+        f"Temperatura: {condiciones['temperatura']} °C\n"
+        f"Viento: {condiciones['viento']} km/h\n"
+        f"Visibilidad: {condiciones['visibilidad']} km\n"
+        f"Nubosidad: {condiciones['nubosidad']}"
+    )
+
+    return texto
