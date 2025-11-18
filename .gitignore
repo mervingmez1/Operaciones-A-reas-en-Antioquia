@@ -18,3 +18,7 @@ Thumbs.db
 # Configuración de IDEs
 .vscode/
 .idea/
+
+# HTML temporales
+.html
+assets/

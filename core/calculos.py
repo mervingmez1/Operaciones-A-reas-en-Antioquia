@@ -68,5 +68,5 @@ def calcular_distancia_y_rumbo(origen: dict, destino: dict):
 
     return distancia, rumbo
 
-    
+
 

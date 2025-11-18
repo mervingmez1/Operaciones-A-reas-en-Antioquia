@@ -25,7 +25,8 @@ def obtener_condiciones_meteorologicas(lat, lon):
     )
 
     try:
-        r = requests.get(url, timeout=5)
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
         data = r.json()
 
         # Conversión de unidades
@@ -35,15 +36,23 @@ def obtener_condiciones_meteorologicas(lat, lon):
         nubes = data["weather"][0]["description"].capitalize()
 
         return {
-            "temperatura": temperatura,
+            "temperatura": round(temperatura, 1),
             "viento": round(viento, 1),
             "visibilidad": round(vis_km, 1),
             "nubosidad": nubes
         }
 
+    except requests.exceptions.Timeout:
+        print("⏱️ Timeout: La API tardó demasiado. Usando datos simulados.")
+        return obtener_condiciones_simuladas()
+    except requests.exceptions.ConnectionError:
+        print("🌐 Error de conexión. Usando datos simulados.")
+        return obtener_condiciones_simuladas()
+    except requests.exceptions.HTTPError as e:
+        print(f"❌ Error HTTP {e.response.status_code}: {e}")
+        return obtener_condiciones_simuladas()
     except Exception as e:
-        print("❌ Error al obtener datos reales:", e)
-        print("Usando condiciones simuladas.")
+        print(f"❌ Error al obtener datos reales: {e}")
         return obtener_condiciones_simuladas()
 
 
@@ -69,8 +78,8 @@ def determinar_reglas_vuelo(condiciones):
     Determina si las condiciones son VFR, MVFR, IFR o LIFR.
     """
 
-    vis_km = condiciones["visibilidad"]
-    nubes = condiciones["nubosidad"].lower()
+    vis_km = condiciones.get("visibilidad", 10)
+    nubes = condiciones.get("nubosidad", "Despejado").lower()
 
     # ---- LIFR ----
     if vis_km < 1:
@@ -121,10 +130,10 @@ def analizar_condiciones_meteorologicas(condiciones):
     texto = (
         f"Clasificación meteorológica: {categoria}\n"
         f"{mensaje}\n\n"
-        f"Temperatura: {condiciones['temperatura']} °C\n"
-        f"Viento: {condiciones['viento']} km/h\n"
-        f"Visibilidad: {condiciones['visibilidad']} km\n"
-        f"Nubosidad: {condiciones['nubosidad']}"
+        f"Temperatura: {condiciones.get('temperatura', 'N/A')} °C\n"
+        f"Viento: {condiciones.get('viento', 'N/A')} km/h\n"
+        f"Visibilidad: {condiciones.get('visibilidad', 'N/A')} km\n"
+        f"Nubosidad: {condiciones.get('nubosidad', 'N/A')}"
     )
 
     return texto

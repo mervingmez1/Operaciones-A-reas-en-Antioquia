@@ -6,7 +6,7 @@ from ui.interfaz import InterfazPlanificador
 
 if __name__ == "__main__":
     # MODO DE PRUEBA (activa o comenta según necesites)
-    modo_prueba = False  # cambia a True para ejecutar solo el cálculo por consola
+    modo_prueba = False  # cambiar a True para ejecutar solo el cálculo por consola
 
     if modo_prueba:
         origen = AEROPUERTOS["SKRG"]
