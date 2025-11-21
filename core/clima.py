@@ -1,139 +1,115 @@
 import os
-import random
 import requests
 from dotenv import load_dotenv
 
-# Cargar API Key desde .env
 load_dotenv()
-API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-# ===========================
-#   DATOS REALES DESDE API
-# ===========================
-def obtener_condiciones_meteorologicas(lat, lon):
-    """
-    Obtiene las condiciones meteorológicas desde OpenWeather API.
-    Retorna un diccionario con temperatura, viento, visibilidad y nubosidad.
-    """
-    if API_KEY is None:
-        print("⚠️ ADVERTENCIA: No se encontró API_KEY, usando datos simulados.")
-        return obtener_condiciones_simuladas()
+CHECKWX_KEY = os.getenv("CHECKWX_API_KEY")
 
-    url = (
-        "https://api.openweathermap.org/data/2.5/weather"
-        f"?lat={lat}&lon={lon}&appid={API_KEY}&units=metric&lang=es"
-    )
+
+# ============================================================
+# 1) Obtener METAR REAL desde CheckWX
+# ============================================================
+
+def obtener_metar(icao: str):
+    """
+    Consulta METAR desde CheckWX y lo devuelve en un diccionario normalizado.
+    """
+
+    if not CHECKWX_KEY:
+        print("[ERROR] No existe clave CHECKWX_API_KEY en .env")
+        return None
+
+    url = f"https://api.checkwx.com/metar/{icao}/decoded"
 
     try:
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
+        r = requests.get(url, headers={"X-API-Key": CHECKWX_KEY}, timeout=10)
+
+        if r.status_code != 200:
+            print(f"[CheckWX] Error HTTP {r.status_code} para {icao}")
+            return None
+
         data = r.json()
 
-        # Conversión de unidades
-        temperatura = data["main"]["temp"]
-        viento = data["wind"]["speed"] * 3.6          # m/s → km/h
-        vis_km = (data.get("visibility", 10000)) / 1000.0
-        nubes = data["weather"][0]["description"].capitalize()
+        if not data.get("data"):
+            print(f"[CheckWX] Sin datos METAR para {icao}")
+            return None
+
+        metar = data["data"][0]
+
+        # --- extraer datos ---
+        temp = metar.get("temperature", {}).get("celsius")
+        wind = metar.get("wind", {}).get("speed_kts")
+        vis_m = metar.get("visibility", {}).get("meters")
+        qnh = metar.get("barometer", {}).get("hpa")
+
+        # Convertir visibilidad a millas náuticas
+        vis_nm = round(vis_m / 1852, 1) if vis_m else None
+
+        # Nubosidad
+        sky = metar.get("sky", [])
+        if isinstance(sky, list) and len(sky) > 0:
+            nub = sky[0].get("condition", "Despejado")
+        else:
+            nub = "Despejado"
 
         return {
-            "temperatura": round(temperatura, 1),
-            "viento": round(viento, 1),
-            "visibilidad": round(vis_km, 1),
-            "nubosidad": nubes
+            "temperatura": temp,
+            "viento": wind,
+            "visibilidad": vis_nm,
+            "presion": qnh,
+            "nubosidad": nub,
+            "raw_text": metar.get("raw_text", "N/A"),
         }
 
-    except requests.exceptions.Timeout:
-        print("⏱️ Timeout: La API tardó demasiado. Usando datos simulados.")
-        return obtener_condiciones_simuladas()
-    except requests.exceptions.ConnectionError:
-        print("🌐 Error de conexión. Usando datos simulados.")
-        return obtener_condiciones_simuladas()
-    except requests.exceptions.HTTPError as e:
-        print(f"❌ Error HTTP {e.response.status_code}: {e}")
-        return obtener_condiciones_simuladas()
     except Exception as e:
-        print(f"❌ Error al obtener datos reales: {e}")
-        return obtener_condiciones_simuladas()
+        print(f"[obtener_metar] Error para {icao}: {e}")
+        return None
 
 
-# =================================
-#     DATOS SIMULADOS (OFFLINE)
-# =================================
-def obtener_condiciones_simuladas():
-    """Genera datos meteorológicos aleatorios."""
-    condiciones = {
-        "temperatura": round(random.uniform(15, 35), 1),
-        "viento": round(random.uniform(0, 25), 1),  # km/h
-        "visibilidad": round(random.uniform(1, 20), 1),  # km
-        "nubosidad": random.choice(["Despejado", "Parcial", "Nublado", "Tormentoso"]),
-    }
-    return condiciones
+# ============================================================
+# 2) Clasificación de reglas de vuelo (compatible con tu interfaz)
+# ============================================================
+
+def determinar_reglas_vuelo(cond):
+    vis = cond.get("visibilidad")
+
+    if vis is None:
+        return "N/A", "No hay visibilidad reportada"
+
+    if vis < 1:
+        return "LIFR", "Condiciones extremadamente limitadas."
+    if vis < 3:
+        return "IFR", "Condiciones solo para vuelo por instrumentos."
+    if vis < 5:
+        return "MVFR", "Condiciones marginales."
+    return "VFR", "Buenas condiciones visuales."
 
 
-# =======================================
-#     CLASIFICACIÓN DE REGLAS DE VUELO
-# =======================================
-def determinar_reglas_vuelo(condiciones):
-    """
-    Determina si las condiciones son VFR, MVFR, IFR o LIFR.
-    """
+# ============================================================
+# 3) Texto detallado usado en posibles reportes
+# ============================================================
 
-    vis_km = condiciones.get("visibilidad", 10)
-    nubes = condiciones.get("nubosidad", "Despejado").lower()
+def analizar_condiciones_meteorologicas(cond):
+    categoria, mensaje = determinar_reglas_vuelo(cond)
 
-    # ---- LIFR ----
-    if vis_km < 1:
-        return "LIFR", "Condiciones extremadamente limitadas. Vuelo VFR prohibido."
-
-    # ---- IFR ----
-    if vis_km < 5:
-        return "IFR", "Condiciones malas. Solo vuelo por instrumentos."
-
-    # ---- MVFR ----
-    if vis_km < 10 or "nublado" in nubes or "torment" in nubes:
-        return "MVFR", "Condiciones marginales. Precaución: visibilidad o nubosidad reducida."
-
-    # ---- VFR ----
-    return "VFR", "Condiciones buenas para vuelo visual."
-
-
-# ===============================
-#  INDICADOR DE FUENTE DE DATOS
-# ===============================
-def fuente_datos():
-    """Solo devuelve un texto indicando si se usa API o simulación."""
     return (
-        "Datos meteorológicos obtenidos desde API externa (OpenWeather)"
-        if API_KEY
-        else "Datos meteorológicos simulados (modo offline)"
-    )
-
-# =======================================
-#   EVALUACIÓN DE SEGURIDAD DEL VUELO
-# =======================================
-
-def es_condicion_segura(condiciones):
-    """
-    Determina si las condiciones son seguras para vuelo VFR.
-    Retorna True/False.
-    """
-    categoria, _ = determinar_reglas_vuelo(condiciones)
-    return categoria == "VFR" or categoria == "MVFR"
-
-
-def analizar_condiciones_meteorologicas(condiciones):
-    """
-    Retorna un texto detallado usado por la interfaz.
-    """
-    categoria, mensaje = determinar_reglas_vuelo(condiciones)
-
-    texto = (
         f"Clasificación meteorológica: {categoria}\n"
         f"{mensaje}\n\n"
-        f"Temperatura: {condiciones.get('temperatura', 'N/A')} °C\n"
-        f"Viento: {condiciones.get('viento', 'N/A')} km/h\n"
-        f"Visibilidad: {condiciones.get('visibilidad', 'N/A')} km\n"
-        f"Nubosidad: {condiciones.get('nubosidad', 'N/A')}"
+        f"Temperatura: {cond.get('temperatura', 'N/A')} °C\n"
+        f"Viento: {cond.get('viento', 'N/A')} kt\n"
+        f"Visibilidad: {cond.get('visibilidad', 'N/A')} NM\n"
+        f"Presión: {cond.get('presion', 'N/A')} hPa\n"
+        f"Nubosidad: {cond.get('nubosidad', 'N/A')}"
     )
 
-    return texto
+
+# ============================================================
+# 4) Fuente de datos mostrada en la interfaz
+# ============================================================
+
+def fuente_datos():
+    if CHECKWX_KEY:
+        return "Datos METAR reales vía CheckWX API"
+    else:
+        return "No hay API configurada"
